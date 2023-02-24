@@ -72,6 +72,13 @@ func TestSingleton(t *testing.T) {
 	}
 }
 
+func TestTag(t *testing.T) {
+	type Foo struct {
+		X int `container:"-"`
+	}
+	Query[*Foo]()
+}
+
 func matchMsg(e any, msg string) bool {
 	if s, ok := e.(string); ok && s == msg {
 		return true
