@@ -65,6 +65,7 @@ func query(container *Container, t reflect.Type, st reflect.Type) reflect.Value 
 		panic(fmt.Sprintf("cannot instantiate %v: circular dependency %v", st, t))
 	}
 	container.resolving[t] = struct{}{}
+	defer delete(container.resolving, t)
 
 	v := reflect.New(t)
 	for i := 0; i < t.NumField(); i++ {
@@ -78,7 +79,6 @@ func query(container *Container, t reflect.Type, st reflect.Type) reflect.Value 
 		v = v.Elem()
 	}
 	container.instance[ot] = v
-	delete(container.resolving, t)
 	return v
 }
 
