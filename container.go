@@ -6,80 +6,106 @@ package container
 import (
 	"fmt"
 	"reflect"
+	"strings"
 )
+
+const None = ""
 
 var defaultContainer = NewContainer()
 
 // 依赖注入容器，存放已创建过的对象。
 type Container struct {
-	instance  map[reflect.Type]reflect.Value
+	instance  map[instanceKey]reflect.Value
 	resolving map[reflect.Type]struct{}
+}
+
+type instanceKey struct {
+	ty  reflect.Type
+	tag string
 }
 
 // 创建一个容器。
 func NewContainer() *Container {
 	return &Container{
-		instance:  map[reflect.Type]reflect.Value{},
+		instance:  map[instanceKey]reflect.Value{},
 		resolving: map[reflect.Type]struct{}{},
 	}
 }
 
 // 手动指定类型 T 的实例，用于 interface 或者初始化需要额外操作的 struct。
-func ProvideWith[T any](v T, container *Container) {
-	container.instance[typeof[T]()] = reflect.ValueOf(v)
+func ProvideWith[T any](v T, tag string, container *Container) {
+	key := instanceKey{ty: typeof[T](), tag: tag}
+	container.instance[key] = reflect.ValueOf(v)
 }
 
 // 类似 ProvideWith，使用默认容器。
-func Provide[T any](v T) {
-	ProvideWith(v, defaultContainer)
+func Provide[T any](v T, tag string) {
+	ProvideWith(v, tag, defaultContainer)
 }
 
 // 获取类型 T 的实例，如果已创建过，直接返回，
 //
 //否则创建一个实例，自动设置所有已导出并且没有 container:"-" tag 的字段。
-func QueryWith[T any](container *Container) T {
-	return query(container, typeof[T](), nil).Interface().(T)
+func QueryWith[T any](container *Container, tag string) T {
+	return query(container, typeof[T](), tag, nil).Interface().(T)
 }
 
 // 类似 QueryWith，使用默认容器。
-func Query[T any]() T {
-	return QueryWith[T](defaultContainer)
+func Query[T any](tag string) T {
+	return QueryWith[T](defaultContainer, tag)
 }
 
-func query(container *Container, t reflect.Type, st reflect.Type) reflect.Value {
-	if v, exists := container.instance[t]; exists {
+func query(container *Container, ty reflect.Type, tag string, parentTy reflect.Type) reflect.Value {
+	key := instanceKey{ty: ty, tag: tag}
+	if v, exists := container.instance[key]; exists {
 		return v
 	}
+	if tag != "" {
+		panic(fmt.Sprintf("instance of type %v with tag \"%v\" not found", ty, tag))
+	}
 
-	ot := t
-	t = deref(t)
-	if t.Kind() != reflect.Struct {
-		if st == nil {
-			panic(fmt.Sprintf("cannot instantiate %v: not a struct", t))
+	originalTy := ty
+	ty = deref(ty)
+	if ty.Kind() != reflect.Struct {
+		if parentTy == nil {
+			panic(fmt.Sprintf("cannot instantiate %v: not a struct", ty))
 		} else {
-			panic(fmt.Sprintf("cannot instantiate %v: expected type struct found type %v", st, t))
+			panic(fmt.Sprintf("cannot instantiate %v: expected struct found type %v", parentTy, ty))
 		}
 	}
 
-	if _, exists := container.resolving[t]; exists {
-		panic(fmt.Sprintf("cannot instantiate %v: circular dependency %v", st, t))
+	if _, exists := container.resolving[ty]; exists {
+		panic(fmt.Sprintf("cannot instantiate %v: circular dependency %v", parentTy, ty))
 	}
-	container.resolving[t] = struct{}{}
-	defer delete(container.resolving, t)
+	container.resolving[ty] = struct{}{}
+	defer delete(container.resolving, ty)
 
-	v := reflect.New(t)
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
-		if f.IsExported() && f.Tag.Get("container") != "-" {
-			v.Elem().Field(i).Set(query(container, f.Type, t))
+	v := reflect.New(ty)
+	for i := 0; i < ty.NumField(); i++ {
+		f := ty.Field(i)
+		inject := f.Tag.Get("inject")
+		if f.IsExported() && inject != "-" {
+			v.Elem().Field(i).Set(query(container, f.Type, parseTag(inject), ty))
 		}
 	}
 
-	if ot.Kind() == reflect.Struct {
+	if originalTy.Kind() == reflect.Struct {
 		v = v.Elem()
 	}
-	container.instance[ot] = v
+	container.instance[key] = v
 	return v
+}
+
+func parseTag(s string) string {
+	if s == "" {
+		return ""
+	}
+	for _, split := range strings.Split(s, ";") {
+		if strings.HasPrefix(split, "tag:") {
+			return split[4:]
+		}
+	}
+	return ""
 }
 
 func typeof[T any]() reflect.Type {

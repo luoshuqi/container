@@ -18,8 +18,8 @@ func TestProvide(t *testing.T) {
 		S fmt.Stringer
 	}
 	bar := &Bar{s: "bar"}
-	Provide[fmt.Stringer](bar)
-	foo := Query[*Foo]()
+	Provide[fmt.Stringer](bar, None)
+	foo := Query[*Foo](None)
 	if foo.S != bar {
 		t.Fail()
 	}
@@ -39,7 +39,7 @@ func TestCircularDependency(t *testing.T) {
 			t.Fail()
 		}
 	}()
-	Query[*Foo]()
+	Query[*Foo](None)
 }
 
 func TestNonStruct(t *testing.T) {
@@ -48,7 +48,7 @@ func TestNonStruct(t *testing.T) {
 			t.Fail()
 		}
 	}()
-	Query[int]()
+	Query[int](None)
 }
 
 func TestSingleton(t *testing.T) {
@@ -66,17 +66,51 @@ func TestSingleton(t *testing.T) {
 		Baz *Baz
 	}
 
-	foo := Query[*Foo]()
+	foo := Query[*Foo](None)
 	if foo.Bar != foo.Baz.Bar {
 		t.Fail()
 	}
 }
 
+func TestIgnoreTag(t *testing.T) {
+	type Foo struct {
+		X int `inject:"-"`
+	}
+	Query[*Foo](None)
+}
+
+type CacheDriver interface {
+	name() string
+}
+
+type FileCacheDriver struct{}
+
+func (r *FileCacheDriver) name() string {
+	return "file"
+}
+
+type RedisCacheDriver struct{}
+
+func (r *RedisCacheDriver) name() string {
+	return "redis"
+}
+
 func TestTag(t *testing.T) {
 	type Foo struct {
-		X int `container:"-"`
+		File  CacheDriver
+		Redis CacheDriver `inject:"tag:redis"`
 	}
-	Query[*Foo]()
+
+	Provide[CacheDriver](Query[*FileCacheDriver](None), None)
+	Provide[CacheDriver](Query[*RedisCacheDriver](None), "redis")
+
+	f := Query[Foo](None)
+	if f.File.name() != "file" {
+		t.Fail()
+	}
+	if f.Redis.name() != "redis" {
+		t.Fail()
+	}
 }
 
 func matchMsg(e any, msg string) bool {
@@ -84,4 +118,8 @@ func matchMsg(e any, msg string) bool {
 		return true
 	}
 	return false
+}
+
+func TestExample(t *testing.T) {
+	Example()
 }

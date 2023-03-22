@@ -1,32 +1,40 @@
 package container
 
-import (
-	"fmt"
-)
-
 type UserManager struct {
-	Cache   Cache
-	Storage *StorageManger
+	Cache1 Cache
+	Cache2 Cache `inject:"tag:redis"`
+	Repo   *UserRepo
 }
 
 type Cache interface {
-	Get(key string) string
+	Name() string
 }
 
-type FileCache struct {
-	Storage *StorageManger
+type FileCache struct{}
+
+func (r *FileCache) Name() string {
+	return "file"
 }
 
-func (r *FileCache) Get(key string) string {
-	return ""
+type RedisCache struct{}
+
+func (r *RedisCache) Name() string {
+	return "redis"
 }
 
-type StorageManger struct{}
+type UserRepo struct{}
 
 func Example() {
-	// 指定 Cache 接口的实例
-	Provide[Cache](Query[*FileCache]())
-	// 获取 *UserManager 实例
-	userManager := Query[*UserManager]()
-	fmt.Println(userManager)
+	fileCache := Query[*FileCache](None)
+	redisCache := Query[*RedisCache](None)
+	Provide[Cache](fileCache, None)
+	Provide[Cache](redisCache, "redis")
+
+	userManager := Query[*UserManager](None)
+	if userManager.Cache1.Name() != "file" {
+		panic("expected file, got " + userManager.Cache1.Name())
+	}
+	if userManager.Cache2.Name() != "redis" {
+		panic("expected redis, got " + userManager.Cache2.Name())
+	}
 }
