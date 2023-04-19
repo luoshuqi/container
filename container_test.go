@@ -52,12 +52,12 @@ func TestNonStruct(t *testing.T) {
 }
 
 func TestSingleton(t *testing.T) {
+	Provide[string]("foo", None)
 	type Bar struct {
-		s string
+		S string
 	}
 
 	type Baz struct {
-		s   string
 		Bar *Bar
 	}
 

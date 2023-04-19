@@ -84,7 +84,10 @@ func query(container *Container, ty reflect.Type, tag string, parentTy reflect.T
 	for i := 0; i < ty.NumField(); i++ {
 		f := ty.Field(i)
 		inject := f.Tag.Get("inject")
-		if f.IsExported() && inject != "-" {
+		if inject != "-" {
+			if !f.IsExported() {
+				panic(fmt.Sprintf("non-exported field %v.%v, add `inject:\"tag:-\"` to skip inject", ty.String(), f.Name))
+			}
 			v.Elem().Field(i).Set(query(container, f.Type, parseTag(inject), ty))
 		}
 	}
