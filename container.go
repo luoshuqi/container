@@ -45,7 +45,7 @@ func Provide[T any](v T, tag string) {
 
 // 获取类型 T 的实例，如果已创建过，直接返回，
 //
-//否则创建一个实例，自动设置所有已导出并且没有 container:"-" tag 的字段。
+//否则创建一个实例，自动设置所有已导出并且没有 inject:"-" tag 的字段。
 func QueryWith[T any](container *Container, tag string) T {
 	return query(container, typeof[T](), tag, nil).Interface().(T)
 }
