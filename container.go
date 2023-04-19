@@ -1,12 +1,13 @@
 // 一个轻量的依赖注入容器。
 //
-//对象只实例化一次，非并发安全。
+//对象只实例化一次。
 package container
 
 import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 )
 
 const None = ""
@@ -17,6 +18,7 @@ var defaultContainer = NewContainer()
 type Container struct {
 	instance  map[instanceKey]reflect.Value
 	resolving map[reflect.Type]struct{}
+	lock      sync.Mutex
 }
 
 type instanceKey struct {
@@ -47,6 +49,8 @@ func Provide[T any](v T, tag string) {
 //
 //否则创建一个实例，自动设置所有已导出并且没有 inject:"-" tag 的字段。
 func QueryWith[T any](container *Container, tag string) T {
+	container.lock.Lock()
+	defer container.lock.Unlock()
 	return query(container, typeof[T](), tag, nil).Interface().(T)
 }
 
