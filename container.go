@@ -9,7 +9,7 @@ import (
 	"sync"
 )
 
-var cont = &Container{
+var c = &Container{
 	instance:  map[instanceKey]reflect.Value{},
 	resolving: map[reflect.Type]struct{}{},
 }
@@ -31,29 +31,36 @@ func Provide[T any](v T) {
 	ProvideTagged(v, "")
 }
 
-// 手动指定类型 T 的实例，用于 interface 或者初始化需要额外操作的 struct。
+// 手动指定类型 T 标记为 tag 的实例，用于 interface 或者初始化需要额外操作的 struct。
 func ProvideTagged[T any](v T, tag string) {
 	key := instanceKey{ty: typeof[T](), tag: tag}
-	cont.instance[key] = reflect.ValueOf(v)
+
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	c.instance[key] = reflect.ValueOf(v)
 }
 
 // 获取类型 T 的实例，如果已创建过，直接返回，
 //否则创建一个实例，自动设置所有没有标记 inject:"-" tag 的字段。
 func Query[T any]() T {
-	return QueryTagged[T]("")
+	return RawQuery(typeof[T](), "").Interface().(T)
 }
 
-// 获取类型 T 的实例，如果已创建过，直接返回，
+// 获取类型 T 标记为 tag 的实例，如果已创建过，直接返回，
 //否则创建一个实例，自动设置所有没有标记 inject:"-" tag 的字段。
 func QueryTagged[T any](tag string) T {
-	cont.lock.Lock()
-	defer cont.lock.Unlock()
-	return query(cont, typeof[T](), tag, nil).Interface().(T)
+	return RawQuery(typeof[T](), tag).Interface().(T)
 }
 
-func query(container *Container, ty reflect.Type, tag string, parentTy reflect.Type) reflect.Value {
+func RawQuery(ty reflect.Type, tag string) reflect.Value {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	return c.query(ty, tag, nil)
+}
+
+func (r *Container) query(ty reflect.Type, tag string, parentTy reflect.Type) reflect.Value {
 	key := instanceKey{ty: ty, tag: tag}
-	if v, exists := container.instance[key]; exists {
+	if v, exists := r.instance[key]; exists {
 		return v
 	}
 	if tag != "" {
@@ -70,11 +77,11 @@ func query(container *Container, ty reflect.Type, tag string, parentTy reflect.T
 		}
 	}
 
-	if _, exists := container.resolving[ty]; exists {
+	if _, exists := r.resolving[ty]; exists {
 		panic(fmt.Sprintf("cannot instantiate %v: circular dependency %v", parentTy, ty))
 	}
-	container.resolving[ty] = struct{}{}
-	defer delete(container.resolving, ty)
+	r.resolving[ty] = struct{}{}
+	defer delete(r.resolving, ty)
 
 	v := reflect.New(ty)
 	for i := 0; i < ty.NumField(); i++ {
@@ -84,14 +91,14 @@ func query(container *Container, ty reflect.Type, tag string, parentTy reflect.T
 			if !f.IsExported() {
 				panic(fmt.Sprintf("unexported field %v.%v, add `inject:\"-\"` tag to skip inject", ty.String(), f.Name))
 			}
-			v.Elem().Field(i).Set(query(container, f.Type, parseTag(inject), ty))
+			v.Elem().Field(i).Set(r.query(f.Type, parseTag(inject), ty))
 		}
 	}
 
 	if originalTy.Kind() == reflect.Struct {
 		v = v.Elem()
 	}
-	container.instance[key] = v
+	r.instance[key] = v
 	return v
 }
 
