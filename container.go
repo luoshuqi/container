@@ -1,5 +1,4 @@
 // 一个轻量的依赖注入容器。
-//
 //对象只实例化一次。
 package container
 
@@ -10,9 +9,10 @@ import (
 	"sync"
 )
 
-const None = ""
-
-var defaultContainer = NewContainer()
+var cont = &Container{
+	instance:  map[instanceKey]reflect.Value{},
+	resolving: map[reflect.Type]struct{}{},
+}
 
 // 依赖注入容器，存放已创建过的对象。
 type Container struct {
@@ -26,37 +26,29 @@ type instanceKey struct {
 	tag string
 }
 
-// 创建一个容器。
-func NewContainer() *Container {
-	return &Container{
-		instance:  map[instanceKey]reflect.Value{},
-		resolving: map[reflect.Type]struct{}{},
-	}
+// 手动指定类型 T 的实例，用于 interface 或者初始化需要额外操作的 struct。
+func Provide[T any](v T) {
+	ProvideTagged(v, "")
 }
 
 // 手动指定类型 T 的实例，用于 interface 或者初始化需要额外操作的 struct。
-func ProvideWith[T any](v T, tag string, container *Container) {
+func ProvideTagged[T any](v T, tag string) {
 	key := instanceKey{ty: typeof[T](), tag: tag}
-	container.instance[key] = reflect.ValueOf(v)
-}
-
-// 类似 ProvideWith，使用默认容器。
-func Provide[T any](v T, tag string) {
-	ProvideWith(v, tag, defaultContainer)
+	cont.instance[key] = reflect.ValueOf(v)
 }
 
 // 获取类型 T 的实例，如果已创建过，直接返回，
-//
-//否则创建一个实例，自动设置所有已导出并且没有 inject:"-" tag 的字段。
-func QueryWith[T any](container *Container, tag string) T {
-	container.lock.Lock()
-	defer container.lock.Unlock()
-	return query(container, typeof[T](), tag, nil).Interface().(T)
+//否则创建一个实例，自动设置所有没有标记 inject:"-" tag 的字段。
+func Query[T any]() T {
+	return QueryTagged[T]("")
 }
 
-// 类似 QueryWith，使用默认容器。
-func Query[T any](tag string) T {
-	return QueryWith[T](defaultContainer, tag)
+// 获取类型 T 的实例，如果已创建过，直接返回，
+//否则创建一个实例，自动设置所有没有标记 inject:"-" tag 的字段。
+func QueryTagged[T any](tag string) T {
+	cont.lock.Lock()
+	defer cont.lock.Unlock()
+	return query(cont, typeof[T](), tag, nil).Interface().(T)
 }
 
 func query(container *Container, ty reflect.Type, tag string, parentTy reflect.Type) reflect.Value {

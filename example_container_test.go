@@ -25,12 +25,12 @@ func (r *RedisCache) Name() string {
 type UserRepo struct{}
 
 func Example() {
-	fileCache := Query[*FileCache](None)
-	redisCache := Query[*RedisCache](None)
-	Provide[Cache](fileCache, None)
-	Provide[Cache](redisCache, "redis")
+	fileCache := Query[*FileCache]()
+	redisCache := Query[*RedisCache]()
+	Provide[Cache](fileCache)
+	ProvideTagged[Cache](redisCache, "redis")
 
-	userManager := Query[*UserManager](None)
+	userManager := Query[*UserManager]()
 	if userManager.Cache1.Name() != "file" {
 		panic("expected file, got " + userManager.Cache1.Name())
 	}
